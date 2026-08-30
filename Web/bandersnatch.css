@@ -1,0 +1,201 @@
+/* ================================================================
+   bandersnatch.css
+   Bandersnatch Interactive Choice Plugin for Jellyfin
+   Styles for the choice overlay and seek prompt overlay.
+   ================================================================ */
+
+/* ----------------------------------------------------------------
+   CHOICE OVERLAY
+   Fixed to the bottom of the viewport, above the Jellyfin player.
+   ---------------------------------------------------------------- */
+
+.bc-choice-overlay {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    /* Center contents horizontally */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    /* Sit above Jellyfin's OSD (z-index ~1000) but below seek prompt */
+    z-index: 10000;
+    /* Don't block pointer events on the underlying player */
+    pointer-events: none;
+    /* Breathing room above the player controls bar */
+    padding-bottom: 88px;
+}
+
+.bc-choice-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    pointer-events: auto;
+}
+
+/* ── Choice buttons ───────────────────────────────────────────── */
+
+.bc-choice-buttons {
+    display: flex;
+    gap: 14px;
+}
+
+.bc-choice-btn {
+    /* Frosted-glass dark panel — matches Netflix aesthetic */
+    background: rgba(20, 20, 20, 0.6);
+    color: #ffffff;
+    border: 2px solid rgba(255, 255, 255, 0.35);
+    padding: 14px 34px;
+    font-size: 16px;
+    font-weight: 600;
+    font-family: inherit;
+    letter-spacing: 0.01em;
+    /* Cursor: default — clicking just highlights, doesn't commit */
+    cursor: default;
+    border-radius: 4px;
+    min-width: 200px;
+    text-align: center;
+    user-select: none;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    transition:
+        background 0.18s ease,
+        border-color 0.18s ease,
+        color 0.18s ease,
+        transform 0.12s ease;
+
+    /* Fade in when the overlay appears */
+    animation: bc-choice-in 0.35s ease both;
+}
+
+.bc-choice-btn--highlighted {
+    background: rgba(255, 255, 255, 0.92);
+    color: #000000;
+    border-color: #ffffff;
+    transform: scale(1.04);
+}
+
+@keyframes bc-choice-in {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ── Countdown bar ────────────────────────────────────────────── */
+
+.bc-countdown-track {
+    width: 428px;
+    max-width: calc(100vw - 40px);
+    height: 3px;
+    background: rgba(255, 255, 255, 0.18);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.bc-countdown-bar {
+    height: 100%;
+    width: 100%;          /* shrinks from JS via style.width */
+    background: #ffffff;
+    border-radius: 2px;
+    transition: width 0.25s linear;
+}
+
+/* ----------------------------------------------------------------
+   SEEK PROMPT OVERLAY
+   Full-screen dark blur — prevents spoilers while paused.
+   ---------------------------------------------------------------- */
+
+.bc-seek-overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 20000;
+
+    /* Heavy dark blur — user can't see what's behind */
+    background: rgba(0, 0, 0, 0.78);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+
+    animation: bc-overlay-in 0.2s ease;
+}
+
+@keyframes bc-overlay-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+/* ── Toast card ───────────────────────────────────────────────── */
+
+.bc-seek-card {
+    background: rgba(18, 18, 18, 0.97);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    padding: 36px 44px;
+    max-width: 460px;
+    width: 90%;
+    text-align: center;
+    color: #ffffff;
+    font-family: inherit;
+    animation: bc-card-in 0.2s ease;
+}
+
+@keyframes bc-card-in {
+    from { opacity: 0; transform: scale(0.96); }
+    to   { opacity: 1; transform: scale(1); }
+}
+
+.bc-seek-prompt__msg {
+    font-size: 18px;
+    font-weight: 500;
+    line-height: 1.55;
+    margin: 0 0 30px;
+}
+
+.bc-seek-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+}
+
+/* ── Seek prompt buttons ──────────────────────────────────────── */
+
+.bc-seek-btn {
+    padding: 12px 28px;
+    font-size: 15px;
+    font-weight: 600;
+    font-family: inherit;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: opacity 0.15s ease, transform 0.1s ease;
+}
+
+.bc-seek-btn:hover {
+    opacity: 0.85;
+    transform: scale(1.02);
+}
+
+.bc-seek-btn:active {
+    transform: scale(0.98);
+}
+
+/* Primary (Go Back) — white fill */
+.bc-seek-prompt__btn--primary {
+    background: #ffffff;
+    color: #000000;
+}
+
+/* Secondary (Stay Here) — ghost */
+.bc-seek-prompt__btn--secondary {
+    background: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+}

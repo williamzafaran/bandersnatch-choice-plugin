@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bandersnatch Interactive</title>
+</head>
+<body>
+<div id="BandersnatchChoicePage"
+     data-role="page"
+     class="page type-interior pluginConfigurationPage"
+     data-require="emby-input,emby-button,emby-select,emby-checkbox,emby-scroller">
+
+    <div data-role="content">
+        <div class="content-primary">
+
+            <form class="BandersnatchChoiceConfigForm">
+
+                <!-- Header -->
+                <div class="verticalSection">
+                    <h2 class="sectionTitle">🎬 Bandersnatch Interactive</h2>
+                    <p class="fieldDescription">
+                        Interactive choice overlay for <strong>Black Mirror: Bandersnatch</strong>.
+                        Injects Netflix-style choice buttons directly into the native Jellyfin player.
+                    </p>
+                </div>
+
+                <div class="verticalSection">
+                    <h3 class="sectionTitle">General</h3>
+
+                    <!-- Enable toggle -->
+                    <label class="checkboxContainer">
+                        <input type="checkbox" is="emby-checkbox" id="chkEnabled" />
+                        <span>Enable interactive features</span>
+                    </label>
+                    <div class="fieldDescription">
+                        When disabled, the plugin is fully passive — no overlays, no seek prompts.
+                    </div>
+                </div>
+
+                <div class="verticalSection">
+                    <h3 class="sectionTitle">Choice Overlay Timing</h3>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="txtLeadIn">
+                            Lead-in time before choice point (seconds)
+                        </label>
+                        <input type="number" id="txtLeadIn" is="emby-input"
+                               min="2" max="30" step="1" />
+                        <div class="fieldDescription">
+                            How many seconds before the segment ends to show the choice buttons.
+                            Netflix uses ~10 seconds. Default: 10.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="verticalSection">
+                    <h3 class="sectionTitle">Item Detection</h3>
+
+                    <!-- Auto-detect toggle -->
+                    <label class="checkboxContainer">
+                        <input type="checkbox" is="emby-checkbox" id="chkAutoDetect" />
+                        <span>Auto-detect Bandersnatch</span>
+                    </label>
+                    <div class="fieldDescription">
+                        Automatically identifies Bandersnatch by matching the item title
+                        (contains "Bandersnatch") <strong>and</strong> duration (~5h 12m).
+                        Only activates for the full interactive cut — not the standard 90-minute version.
+                    </div>
+
+                    <!-- Manual Item ID -->
+                    <div class="inputContainer" style="margin-top:16px;">
+                        <label class="inputLabel inputLabelUnfocused" for="txtManualItemId">
+                            Manual Item ID override (optional)
+                        </label>
+                        <input type="text" id="txtManualItemId" is="emby-input"
+                               placeholder="e.g. a1b2c3d4e5f6..." />
+                        <div class="fieldDescription">
+                            If auto-detection picks the wrong item (or you have a non-standard filename),
+                            paste your Bandersnatch Item ID here. Find it in the Jellyfin URL
+                            when browsing the item: <code>?id=&lt;ItemId&gt;</code>.
+                            Leave blank to rely on auto-detection.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Save button -->
+                <div class="verticalSection">
+                    <button is="emby-button" type="submit" class="raised button-submit block">
+                        <span>Save</span>
+                    </button>
+                </div>
+
+            </form>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        /* global ApiClient, Dashboard */
+
+        (function () {
+            const pluginId = 'c7d8e9f0-a1b2-4c3d-8e5f-6a7b8c9d0e1f';
+
+            // Load current config
+            function loadConfig() {
+                ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                    document.getElementById('chkEnabled').checked = config.Enabled !== false;
+                    document.getElementById('txtLeadIn').value = config.LeadInSeconds ?? 10;
+                    document.getElementById('chkAutoDetect').checked = config.AutoDetect !== false;
+                    document.getElementById('txtManualItemId').value = config.ManualItemId ?? '';
+                });
+            }
+
+            // Save config on form submit
+            document.querySelector('.BandersnatchChoiceConfigForm').addEventListener('submit', function (e) {
+                e.preventDefault();
+
+                ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                    config.Enabled = document.getElementById('chkEnabled').checked;
+                    config.LeadInSeconds = parseInt(document.getElementById('txtLeadIn').value, 10) || 10;
+                    config.AutoDetect = document.getElementById('chkAutoDetect').checked;
+                    config.ManualItemId = document.getElementById('txtManualItemId').value.trim() || null;
+
+                    ApiClient.updatePluginConfiguration(pluginId, config).then(function () {
+                        Dashboard.processPluginConfigurationUpdateResult();
+                    });
+                });
+            });
+
+            // Initialize on page load
+            document.getElementById('BandersnatchChoicePage').addEventListener('pageshow', loadConfig);
+        })();
+    </script>
+</div>
+</body>
+</html>

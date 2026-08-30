@@ -1,0 +1,148 @@
+name: "Publish Plugin"
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
+        ref: master
+
+    - name: Setup .NET 8
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 8.0.x
+
+    - name: Setup Node.js (for metadata generator)
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Regenerate complete interactive metadata JSON
+      run: node generate-metadata.js
+
+    - name: Build plugin (Release)
+      run: |
+        dotnet build BandersnatchChoice.csproj \
+          -c Release \
+          --output ./build-output
+
+    - name: Stage plugin files and create zip
+      id: package
+      run: |
+        mkdir -p ./staging
+
+        # Copy DLL (main plugin binary)
+        cp ./build-output/Jellyfin.Plugin.BandersnatchChoice.dll ./staging/
+
+        # Copy meta.json (Jellyfin reads this from the zip)
+        cp ./meta.json ./staging/
+
+        # Determine version
+        if [ "${{ github.event_name }}" = "release" ]; then
+          VERSION="${{ github.event.release.tag_name }}"
+        else
+          VERSION="v1.0.0"
+        fi
+        VERSION_CLEAN="${VERSION#v}"
+
+        # Update meta.json version and timestamp
+        TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        sed -i "s/\"version\": \".*\"/\"version\": \"${VERSION_CLEAN}.0\"/" ./staging/meta.json
+        sed -i "s/\"timestamp\": \".*\"/\"timestamp\": \"${TIMESTAMP}\"/" ./staging/meta.json
+
+        # Create the zip
+        cd staging
+        zip -r ../bandersnatch-choice-plugin.zip *
+        cd ..
+
+        # Calculate MD5 checksum
+        CHECKSUM=$(md5sum bandersnatch-choice-plugin.zip | cut -d' ' -f1)
+
+        echo "version=${VERSION_CLEAN}" >> $GITHUB_OUTPUT
+        echo "version_full=${VERSION_CLEAN}.0" >> $GITHUB_OUTPUT
+        echo "checksum=${CHECKSUM}" >> $GITHUB_OUTPUT
+        echo "timestamp=${TIMESTAMP}" >> $GITHUB_OUTPUT
+
+        echo "📦 Plugin zip: $(ls -lh bandersnatch-choice-plugin.zip | awk '{print $5}')"
+        echo "🔑 Checksum: ${CHECKSUM}"
+        echo "🏷️  Version: ${VERSION_CLEAN}"
+
+    - name: Upload plugin zip to GitHub Release
+      if: github.event_name == 'release'
+      uses: softprops/action-gh-release@v1
+      with:
+        files: bandersnatch-choice-plugin.zip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Update manifest.json
+      run: |
+        VERSION="${{ steps.package.outputs.version }}"
+        VERSION_FULL="${{ steps.package.outputs.version_full }}"
+        CHECKSUM="${{ steps.package.outputs.checksum }}"
+        TIMESTAMP="${{ steps.package.outputs.timestamp }}"
+
+        if [ "${{ github.event_name }}" = "release" ]; then
+          CHANGELOG="${{ github.event.release.body }}"
+          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/v${VERSION}/bandersnatch-choice-plugin.zip"
+        else
+          CHANGELOG="Manual workflow dispatch build."
+          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/v${VERSION}/bandersnatch-choice-plugin.zip"
+        fi
+
+        # Escape changelog for JSON
+        CHANGELOG_ESCAPED=$(echo "${CHANGELOG}" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\n' ' ')
+
+        cat > manifest.json << EOF
+        [
+            {
+                "category": "General",
+                "guid": "c7d8e9f0-a1b2-4c3d-8e5f-6a7b8c9d0e1f",
+                "name": "Bandersnatch Interactive",
+                "description": "Injects Netflix-accurate interactive choice UI directly into the native Jellyfin player for Black Mirror: Bandersnatch. Auto-detects the interactive cut, shows choice overlays with countdown timer, and handles seek navigation intelligently.",
+                "owner": "williamzafaran",
+                "overview": "Play Black Mirror: Bandersnatch the way it was meant to be experienced. Choice buttons injected into Jellyfin's native player — no separate player page needed.",
+                "versions": [
+                    {
+                        "checksum": "${CHECKSUM}",
+                        "changelog": "${CHANGELOG_ESCAPED}",
+                        "targetAbi": "10.9.0.0",
+                        "sourceUrl": "${DOWNLOAD_URL}",
+                        "timestamp": "${TIMESTAMP}",
+                        "version": "${VERSION_FULL}"
+                    }
+                ]
+            }
+        ]
+        EOF
+
+        echo "✅ manifest.json updated"
+        cat manifest.json
+
+    - name: Commit and push manifest.json
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+
+        git add manifest.json
+        if git diff --staged --quiet; then
+          echo "No changes to manifest.json"
+        else
+          git commit -m "chore: update manifest.json for release ${{ github.event.release.tag_name || 'manual' }}"
+          git push origin HEAD:master
+          echo "✅ manifest.json pushed to master"
+        fi

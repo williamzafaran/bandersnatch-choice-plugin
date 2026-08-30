@@ -1,0 +1,13 @@
+{
+    "category": "General",
+    "changelog": "Initial release.",
+    "description": "Injects Netflix-accurate interactive choice UI directly into the native Jellyfin player for Black Mirror: Bandersnatch.",
+    "guid": "c7d8e9f0-a1b2-4c3d-8e5f-6a7b8c9d0e1f",
+    "imageUrl": "",
+    "name": "Bandersnatch Interactive",
+    "overview": "Play Black Mirror: Bandersnatch with full interactive choice overlays inside the native Jellyfin player.",
+    "owner": "williamzafaran",
+    "targetAbi": "10.9.0.0",
+    "timestamp": "2026-08-29T00:00:00Z",
+    "version": "1.0.0.0"
+}
