@@ -61,8 +61,12 @@ namespace Jellyfin.Plugin.BandersnatchChoice
             {
                 new PluginPageInfo
                 {
-                    Name = this.Name,
-                    EmbeddedResourcePath = $"{GetType().Namespace}.Configuration.configPage.html"
+                    Name            = this.Name,
+                    EmbeddedResourcePath = $"{GetType().Namespace}.Configuration.configPage.html",
+                    // Show in the Jellyfin admin side-panel under Plugins
+                    EnableInMainMenu = true,
+                    MenuIcon        = "movie",
+                    MenuSection     = "server"
                 }
             };
         }

@@ -90,6 +90,27 @@
                 </div>
 
             </form>
+
+            <!-- ─────────────────────────────────────────────────────────
+                 Chapter Marks section (separate from the config form)
+            ──────────────────────────────────────────────────────────── -->
+            <div class="verticalSection" style="margin-top:2em; padding-top:1.5em; border-top:1px solid rgba(255,255,255,0.12);">
+                <h3 class="sectionTitle">Chapter Markers</h3>
+                <p class="fieldDescription">
+                    Writes the full Bandersnatch segment map (250 segments) as Jellyfin chapter
+                    markers on the item. This lets you see segment boundaries in the seekbar and
+                    jump between them with the chapter navigation controls.
+                    Uses the Item ID above (or auto-detects) — save settings first if you just set it.
+                </p>
+
+                <button is="emby-button" type="button" id="btnGenerateChapters"
+                        class="raised button-submit">
+                    <span>Generate Chapter Marks</span>
+                </button>
+
+                <div id="chapterStatus" style="margin-top:12px; font-size:.9em;"></div>
+            </div>
+
         </div>
     </div>
 
@@ -98,35 +119,73 @@
 
         (function () {
             const pluginId = 'c7d8e9f0-a1b2-4c3d-8e5f-6a7b8c9d0e1f';
+            const API_BASE = '/BandersnatchChoice';
 
-            // Load current config
+            // ── Load current config ───────────────────────────────────────────
             function loadConfig() {
                 ApiClient.getPluginConfiguration(pluginId).then(function (config) {
-                    document.getElementById('chkEnabled').checked = config.Enabled !== false;
-                    document.getElementById('txtLeadIn').value = config.LeadInSeconds ?? 10;
+                    document.getElementById('chkEnabled').checked   = config.Enabled !== false;
+                    document.getElementById('txtLeadIn').value       = config.LeadInSeconds ?? 10;
                     document.getElementById('chkAutoDetect').checked = config.AutoDetect !== false;
                     document.getElementById('txtManualItemId').value = config.ManualItemId ?? '';
                 });
             }
 
-            // Save config on form submit
-            document.querySelector('.BandersnatchChoiceConfigForm').addEventListener('submit', function (e) {
-                e.preventDefault();
+            // ── Save config on form submit ────────────────────────────────────
+            document.querySelector('.BandersnatchChoiceConfigForm')
+                .addEventListener('submit', function (e) {
+                    e.preventDefault();
 
-                ApiClient.getPluginConfiguration(pluginId).then(function (config) {
-                    config.Enabled = document.getElementById('chkEnabled').checked;
-                    config.LeadInSeconds = parseInt(document.getElementById('txtLeadIn').value, 10) || 10;
-                    config.AutoDetect = document.getElementById('chkAutoDetect').checked;
-                    config.ManualItemId = document.getElementById('txtManualItemId').value.trim() || null;
+                    ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                        config.Enabled       = document.getElementById('chkEnabled').checked;
+                        config.LeadInSeconds = parseInt(document.getElementById('txtLeadIn').value, 10) || 10;
+                        config.AutoDetect    = document.getElementById('chkAutoDetect').checked;
+                        config.ManualItemId  = document.getElementById('txtManualItemId').value.trim() || null;
 
-                    ApiClient.updatePluginConfiguration(pluginId, config).then(function () {
-                        Dashboard.processPluginConfigurationUpdateResult();
+                        ApiClient.updatePluginConfiguration(pluginId, config).then(function () {
+                            Dashboard.processPluginConfigurationUpdateResult();
+                        });
                     });
                 });
-            });
 
-            // Initialize on page load
-            document.getElementById('BandersnatchChoicePage').addEventListener('pageshow', loadConfig);
+            // ── Generate Chapter Marks ────────────────────────────────────────
+            document.getElementById('btnGenerateChapters')
+                .addEventListener('click', function () {
+                    const statusEl = document.getElementById('chapterStatus');
+                    const btn      = document.getElementById('btnGenerateChapters');
+                    const manualId = document.getElementById('txtManualItemId').value.trim();
+
+                    btn.setAttribute('disabled', 'disabled');
+                    statusEl.style.color = '';
+                    statusEl.textContent = '⏳ Generating chapter marks…';
+
+                    // Build URL — include itemId param if manually specified
+                    const url = manualId
+                        ? `${API_BASE}/GenerateChapters?itemId=${encodeURIComponent(manualId)}`
+                        : `${API_BASE}/GenerateChapters`;
+
+                    ApiClient.fetch({
+                        type: 'POST',
+                        url: ApiClient.getUrl(url),
+                        dataType: 'json'
+                    }).then(function (result) {
+                        statusEl.style.color = '#4caf50';
+                        statusEl.textContent =
+                            `✅ Done! Wrote ${result.chaptersWritten} chapter marks for "${result.itemName}".`;
+                    }).catch(function (err) {
+                        statusEl.style.color = '#f44336';
+                        statusEl.textContent =
+                            `❌ Failed: ${err.status === 404
+                                ? 'Item not found — set the Manual Item ID above and try again.'
+                                : (err.statusText || 'Server error')}`;
+                    }).finally(function () {
+                        btn.removeAttribute('disabled');
+                    });
+                });
+
+            // ── Initialize on page load ───────────────────────────────────────
+            document.getElementById('BandersnatchChoicePage')
+                .addEventListener('pageshow', loadConfig);
         })();
     </script>
 </div>

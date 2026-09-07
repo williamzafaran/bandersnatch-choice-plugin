@@ -41,6 +41,8 @@
     let previousTime = 0;
     let isSeeking = false;
     let seekStartTime = 0;
+    /** Set to true before any plugin-initiated seek so onSeeked ignores it */
+    let pluginSeeking = false;
 
     // Choice overlay state
     let activeChoicePoint = null;   // { id, ...choicePointData }
@@ -360,6 +362,15 @@
 
     function onSeeked() {
         isSeeking = false;
+
+        // Plugin-initiated seek (e.g. committing a choice or seek-prompt go-back):
+        // do NOT treat this as a user seek — just reset the flag and return.
+        if (pluginSeeking) {
+            pluginSeeking = false;
+            previousTime = video.currentTime; // keep previousTime in sync
+            return;
+        }
+
         if (!isActive) return;
 
         const currentTime = video.currentTime;
@@ -471,8 +482,8 @@
 
         // Check each choice point
         for (const [cpId, cp] of Object.entries(metadata.choicePoints)) {
-            // Skip already-resolved choices
-            if (sessionState.choicesMade[cpId]) continue;
+            // Note: we intentionally do NOT skip already-made choices — the overlay
+            // should always reappear so the user can explore alternate branches freely.
 
             // Skip choices whose state conditions aren't met
             if (!meetsRequiredState(cp.requiredState)) continue;
@@ -604,7 +615,8 @@
         recordChoice(activeChoicePoint.id, selected.nextSegmentId);
         hideChoiceOverlay();
 
-        // Seek to the start of the chosen segment
+        // Seek to the start of the chosen segment — mark as plugin seek to suppress seek-prompt
+        pluginSeeking = true;
         video.currentTime = targetSegment.startMs / 1000;
     }
 
@@ -629,6 +641,7 @@
 
         newGoBackBtn.addEventListener('click', () => {
             seekPromptEl.style.display = 'none';
+            pluginSeeking = true; // suppress seek detection for this plugin-driven seek
             video.currentTime = Math.max(0, goBackToSec);
             video.play();
         });
