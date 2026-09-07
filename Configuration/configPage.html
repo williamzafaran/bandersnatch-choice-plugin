@@ -7,14 +7,14 @@
 <div id="BandersnatchChoicePage"
      data-role="page"
      class="page type-interior pluginConfigurationPage"
-     data-require="emby-input,emby-button,emby-select,emby-checkbox,emby-scroller">
+     data-require="emby-input,emby-button,emby-checkbox,emby-scroller">
 
     <div data-role="content">
         <div class="content-primary">
 
             <form class="BandersnatchChoiceConfigForm">
 
-                <!-- Header -->
+                <!-- ── Header ─────────────────────────────────────────────── -->
                 <div class="verticalSection">
                     <h2 class="sectionTitle">🎬 Bandersnatch Interactive</h2>
                     <p class="fieldDescription">
@@ -23,10 +23,10 @@
                     </p>
                 </div>
 
+                <!-- ── General ────────────────────────────────────────────── -->
                 <div class="verticalSection">
                     <h3 class="sectionTitle">General</h3>
 
-                    <!-- Enable toggle -->
                     <label class="checkboxContainer">
                         <input type="checkbox" is="emby-checkbox" id="chkEnabled" />
                         <span>Enable interactive features</span>
@@ -36,6 +36,7 @@
                     </div>
                 </div>
 
+                <!-- ── Timing ──────────────────────────────────────────────── -->
                 <div class="verticalSection">
                     <h3 class="sectionTitle">Choice Overlay Timing</h3>
 
@@ -46,25 +47,27 @@
                         <input type="number" id="txtLeadIn" is="emby-input"
                                min="2" max="30" step="1" />
                         <div class="fieldDescription">
-                            How many seconds before the segment ends to show the choice buttons.
+                            How many seconds before the segment ends to show choice buttons.
                             Netflix uses ~10 seconds. Default: 10.
                         </div>
                     </div>
                 </div>
 
+                <!-- ── Item Detection ─────────────────────────────────────── -->
                 <div class="verticalSection">
                     <h3 class="sectionTitle">Item Detection</h3>
 
-                    <!-- Auto-detect toggle -->
                     <label class="checkboxContainer">
                         <input type="checkbox" is="emby-checkbox" id="chkAutoDetect" />
                         <span>Auto-detect Bandersnatch</span>
                     </label>
                     <div class="fieldDescription">
-                        Automatically identifies Bandersnatch by matching the item title
-                        (contains "Bandersnatch") <strong>and</strong> duration (~5h 12m).
-                        Only activates for the full interactive cut — not the standard 90-minute version.
+                        Matches by title (contains "Bandersnatch") <strong>and</strong> duration (~5h 12m).
+                        Only activates for the full interactive cut.
                     </div>
+
+                    <!-- Detection status line -->
+                    <div id="detectionStatus" style="margin-top:10px; font-size:.88em; min-height:1.4em;"></div>
 
                     <!-- Manual Item ID -->
                     <div class="inputContainer" style="margin-top:16px;">
@@ -74,15 +77,24 @@
                         <input type="text" id="txtManualItemId" is="emby-input"
                                placeholder="e.g. a1b2c3d4e5f6..." />
                         <div class="fieldDescription">
-                            If auto-detection picks the wrong item (or you have a non-standard filename),
-                            paste your Bandersnatch Item ID here. Find it in the Jellyfin URL
-                            when browsing the item: <code>?id=&lt;ItemId&gt;</code>.
-                            Leave blank to rely on auto-detection.
+                            Auto-filled if Bandersnatch is detected. Paste your Item ID here if
+                            detection fails — find it in the Jellyfin URL: <code>?id=&lt;ItemId&gt;</code>.
+                        </div>
+                    </div>
+
+                    <!-- Poster preview card -->
+                    <div id="posterContainer" style="display:none; margin-top:14px; display:flex; align-items:flex-start; gap:14px; display:none;">
+                        <img id="itemPoster"
+                             style="height:180px; border-radius:6px; box-shadow:0 3px 10px rgba(0,0,0,.6); flex-shrink:0;"
+                             alt="Bandersnatch poster" />
+                        <div style="padding-top:6px;">
+                            <div id="itemNameLabel" style="font-weight:600; font-size:1.05em;"></div>
+                            <div id="itemIdLabel" style="font-size:.78em; opacity:.6; margin-top:3px; word-break:break-all;"></div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Save button -->
+                <!-- ── Save button ────────────────────────────────────────── -->
                 <div class="verticalSection">
                     <button is="emby-button" type="submit" class="raised button-submit block">
                         <span>Save</span>
@@ -91,16 +103,14 @@
 
             </form>
 
-            <!-- ─────────────────────────────────────────────────────────
-                 Chapter Marks section (separate from the config form)
-            ──────────────────────────────────────────────────────────── -->
-            <div class="verticalSection" style="margin-top:2em; padding-top:1.5em; border-top:1px solid rgba(255,255,255,0.12);">
+            <!-- ── Chapter Markers ───────────────────────────────────────── -->
+            <div class="verticalSection"
+                 style="margin-top:2em; padding-top:1.5em; border-top:1px solid rgba(255,255,255,0.12);">
                 <h3 class="sectionTitle">Chapter Markers</h3>
                 <p class="fieldDescription">
-                    Writes the full Bandersnatch segment map (250 segments) as Jellyfin chapter
-                    markers on the item. This lets you see segment boundaries in the seekbar and
-                    jump between them with the chapter navigation controls.
-                    Uses the Item ID above (or auto-detects) — save settings first if you just set it.
+                    Writes all 250 Bandersnatch segment timestamps as Jellyfin chapter markers
+                    on the item. Lets you see segment boundaries in the seekbar and jump between them.
+                    Save settings first if you just changed the Item ID.
                 </p>
 
                 <button is="emby-button" type="button" id="btnGenerateChapters"
@@ -116,22 +126,85 @@
 
     <script type="text/javascript">
         /* global ApiClient, Dashboard */
-
         (function () {
             const pluginId = 'c7d8e9f0-a1b2-4c3d-8e5f-6a7b8c9d0e1f';
-            const API_BASE = '/BandersnatchChoice';
+            const API      = '/BandersnatchChoice';
 
-            // ── Load current config ───────────────────────────────────────────
-            function loadConfig() {
-                ApiClient.getPluginConfiguration(pluginId).then(function (config) {
-                    document.getElementById('chkEnabled').checked   = config.Enabled !== false;
-                    document.getElementById('txtLeadIn').value       = config.LeadInSeconds ?? 10;
-                    document.getElementById('chkAutoDetect').checked = config.AutoDetect !== false;
-                    document.getElementById('txtManualItemId').value = config.ManualItemId ?? '';
+            // ── Helpers ───────────────────────────────────────────────────────
+
+            /** Wraps ApiClient.ajax() for both GET and POST with auth. */
+            function apiCall(method, path, data) {
+                return ApiClient.ajax({
+                    type: method,
+                    url:  ApiClient.getUrl(path),
+                    data: data ? JSON.stringify(data) : undefined,
+                    contentType: data ? 'application/json' : undefined
                 });
             }
 
-            // ── Save config on form submit ────────────────────────────────────
+            // ── Detect item & show poster ─────────────────────────────────────
+
+            function detectAndShowItem() {
+                const statusEl    = document.getElementById('detectionStatus');
+                const posterEl    = document.getElementById('posterContainer');
+                const posterImg   = document.getElementById('itemPoster');
+                const nameEl      = document.getElementById('itemNameLabel');
+                const idEl        = document.getElementById('itemIdLabel');
+                const idField     = document.getElementById('txtManualItemId');
+
+                statusEl.textContent = '🔍 Detecting…';
+                statusEl.style.color = '';
+
+                apiCall('GET', `${API}/DetectItem`)
+                    .then(function (result) {
+                        if (!result || !result.found) {
+                            statusEl.textContent = '⚠️ Bandersnatch not found in library';
+                            statusEl.style.color = '#ff9800';
+                            posterEl.style.display = 'none';
+                            return;
+                        }
+
+                        // Show status
+                        const tag = result.source === 'manual' ? '📌 Manual' : '✅ Auto-detected';
+                        statusEl.textContent = `${tag}: ${result.name}`;
+                        statusEl.style.color = '#4caf50';
+
+                        // Auto-fill ID field if it's blank
+                        if (!idField.value.trim()) {
+                            idField.value = result.itemId;
+                        }
+
+                        // Poster preview
+                        const posterUrl = ApiClient.getUrl(
+                            `/Items/${result.itemId}/Images/Primary?maxHeight=200&quality=90`);
+                        posterImg.src     = posterUrl;
+                        nameEl.textContent = result.name;
+                        idEl.textContent   = result.itemId;
+                        posterEl.style.display = 'flex';
+                    })
+                    .catch(function () {
+                        statusEl.textContent = '⚠️ Detection unavailable (check server logs)';
+                        statusEl.style.color = '#ff9800';
+                        posterEl.style.display = 'none';
+                    });
+            }
+
+            // ── Load config ───────────────────────────────────────────────────
+
+            function loadConfig() {
+                ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                    document.getElementById('chkEnabled').checked     = config.Enabled !== false;
+                    document.getElementById('txtLeadIn').value         = config.LeadInSeconds ?? 10;
+                    document.getElementById('chkAutoDetect').checked   = config.AutoDetect !== false;
+                    document.getElementById('txtManualItemId').value   = config.ManualItemId ?? '';
+
+                    // After loading config, try detecting the item
+                    detectAndShowItem();
+                });
+            }
+
+            // ── Save config ───────────────────────────────────────────────────
+
             document.querySelector('.BandersnatchChoiceConfigForm')
                 .addEventListener('submit', function (e) {
                     e.preventDefault();
@@ -144,11 +217,18 @@
 
                         ApiClient.updatePluginConfiguration(pluginId, config).then(function () {
                             Dashboard.processPluginConfigurationUpdateResult();
+                            // Re-detect after saving (manual ID may have changed)
+                            setTimeout(detectAndShowItem, 300);
                         });
                     });
                 });
 
+            // Re-detect when auto-detect checkbox is toggled
+            document.getElementById('chkAutoDetect')
+                .addEventListener('change', detectAndShowItem);
+
             // ── Generate Chapter Marks ────────────────────────────────────────
+
             document.getElementById('btnGenerateChapters')
                 .addEventListener('click', function () {
                     const statusEl = document.getElementById('chapterStatus');
@@ -159,31 +239,32 @@
                     statusEl.style.color = '';
                     statusEl.textContent = '⏳ Generating chapter marks…';
 
-                    // Build URL — include itemId param if manually specified
-                    const url = manualId
-                        ? `${API_BASE}/GenerateChapters?itemId=${encodeURIComponent(manualId)}`
-                        : `${API_BASE}/GenerateChapters`;
+                    const url = `${API}/GenerateChapters` +
+                        (manualId ? `?itemId=${encodeURIComponent(manualId)}` : '');
 
-                    ApiClient.fetch({
-                        type: 'POST',
-                        url: ApiClient.getUrl(url),
-                        dataType: 'json'
-                    }).then(function (result) {
-                        statusEl.style.color = '#4caf50';
-                        statusEl.textContent =
-                            `✅ Done! Wrote ${result.chaptersWritten} chapter marks for "${result.itemName}".`;
-                    }).catch(function (err) {
-                        statusEl.style.color = '#f44336';
-                        statusEl.textContent =
-                            `❌ Failed: ${err.status === 404
-                                ? 'Item not found — set the Manual Item ID above and try again.'
-                                : (err.statusText || 'Server error')}`;
-                    }).finally(function () {
-                        btn.removeAttribute('disabled');
-                    });
+                    apiCall('POST', url)
+                        .then(function (result) {
+                            statusEl.style.color = '#4caf50';
+                            statusEl.textContent =
+                                `✅ Done! Wrote ${result.chaptersWritten} chapter marks for "${result.itemName}".`;
+                        })
+                        .catch(function (err) {
+                            statusEl.style.color = '#f44336';
+                            if (err && err.status === 404) {
+                                statusEl.textContent =
+                                    '❌ Item not found. Make sure Bandersnatch is in your library and try saving the Item ID first.';
+                            } else {
+                                statusEl.textContent =
+                                    `❌ Failed: ${err && err.statusText ? err.statusText : 'Server error — check Jellyfin logs.'}`;
+                            }
+                        })
+                        .finally(function () {
+                            btn.removeAttribute('disabled');
+                        });
                 });
 
-            // ── Initialize on page load ───────────────────────────────────────
+            // ── Init ─────────────────────────────────────────────────────────
+
             document.getElementById('BandersnatchChoicePage')
                 .addEventListener('pageshow', loadConfig);
         })();
