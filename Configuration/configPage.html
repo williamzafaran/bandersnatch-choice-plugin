@@ -132,13 +132,19 @@
 
             // ── Helpers ───────────────────────────────────────────────────────
 
-            /** Wraps ApiClient.ajax() for both GET and POST with auth. */
-            function apiCall(method, path, data) {
+            /**
+             * GET: use ApiClient.getJSON — it reliably adds auth headers and parses JSON.
+             * POST: use ApiClient.ajax with dataType:'json'.
+             */
+            function apiGet(path) {
+                return ApiClient.getJSON(ApiClient.getUrl(path));
+            }
+
+            function apiPost(path) {
                 return ApiClient.ajax({
-                    type: method,
+                    type: 'POST',
                     url:  ApiClient.getUrl(path),
-                    data: data ? JSON.stringify(data) : undefined,
-                    contentType: data ? 'application/json' : undefined
+                    dataType: 'json'
                 });
             }
 
@@ -155,7 +161,7 @@
                 statusEl.textContent = '🔍 Detecting…';
                 statusEl.style.color = '';
 
-                apiCall('GET', `${API}/DetectItem`)
+                apiGet(`${API}/DetectItem`)
                     .then(function (result) {
                         if (!result || !result.found) {
                             statusEl.textContent = '⚠️ Bandersnatch not found in library';
@@ -242,7 +248,7 @@
                     const url = `${API}/GenerateChapters` +
                         (manualId ? `?itemId=${encodeURIComponent(manualId)}` : '');
 
-                    apiCall('POST', url)
+                    apiPost(url)
                         .then(function (result) {
                             statusEl.style.color = '#4caf50';
                             statusEl.textContent =

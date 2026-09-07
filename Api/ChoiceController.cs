@@ -116,18 +116,28 @@ namespace Jellyfin.Plugin.BandersnatchChoice.Api
                     }
                 }
 
-                // 2. Auto-detect: search all items (not just Movies — could be a Video)
-                var item = _libraryManager
-                    .GetItemList(new InternalItemsQuery { Recursive = true })
-                    .FirstOrDefault(i =>
-                    {
-                        if (!(i.Name ?? string.Empty)
-                            .Contains("Bandersnatch", StringComparison.OrdinalIgnoreCase))
-                            return false;
+                // 2. Auto-detect: two-pass search
+                //    Pass 1: name contains "Bandersnatch" AND duration ≈ 5h 12m
+                //    Pass 2: name-only (RunTimeTicks may be 0 if not yet scanned)
+                var allItems = _libraryManager
+                    .GetItemList(new InternalItemsQuery { Recursive = true });
 
-                        var durationMs = (i.RunTimeTicks ?? 0) / 10_000L;
-                        return Math.Abs(durationMs - BandersnatchDurationMs) < DurationToleranceMs;
-                    });
+                // Pass 1: name + duration
+                var item = allItems.FirstOrDefault(i =>
+                {
+                    if (!(i.Name ?? string.Empty)
+                        .Contains("Bandersnatch", StringComparison.OrdinalIgnoreCase))
+                        return false;
+                    var ticks = i.RunTimeTicks ?? 0;
+                    if (ticks == 0) return false;
+                    var durationMs = ticks / 10_000L;
+                    return Math.Abs(durationMs - BandersnatchDurationMs) < DurationToleranceMs;
+                });
+
+                // Pass 2: name only (covers unscanned or differently-encoded files)
+                item ??= allItems.FirstOrDefault(i =>
+                    (i.Name ?? string.Empty)
+                        .Contains("Bandersnatch", StringComparison.OrdinalIgnoreCase));
 
                 if (item == null)
                 {
@@ -170,19 +180,28 @@ namespace Jellyfin.Plugin.BandersnatchChoice.Api
                     item = _libraryManager.GetItemById(guid);
                 }
 
-                // Fall back to auto-detection (search all item types, not just Movie)
+                // Fall back to auto-detection — two-pass, same as DetectItem
                 if (item == null)
                 {
-                    item = _libraryManager
-                        .GetItemList(new InternalItemsQuery { Recursive = true })
-                        .FirstOrDefault(i =>
-                        {
-                            if (!(i.Name ?? string.Empty)
-                                .Contains("Bandersnatch", StringComparison.OrdinalIgnoreCase))
-                                return false;
-                            var durationMs = (i.RunTimeTicks ?? 0) / 10_000L;
-                            return Math.Abs(durationMs - BandersnatchDurationMs) < DurationToleranceMs;
-                        });
+                    var allItems2 = _libraryManager
+                        .GetItemList(new InternalItemsQuery { Recursive = true });
+
+                    // Pass 1: name + duration
+                    item = allItems2.FirstOrDefault(i =>
+                    {
+                        if (!(i.Name ?? string.Empty)
+                            .Contains("Bandersnatch", StringComparison.OrdinalIgnoreCase))
+                            return false;
+                        var ticks = i.RunTimeTicks ?? 0;
+                        if (ticks == 0) return false;
+                        var durationMs = ticks / 10_000L;
+                        return Math.Abs(durationMs - BandersnatchDurationMs) < DurationToleranceMs;
+                    });
+
+                    // Pass 2: name only
+                    item ??= allItems2.FirstOrDefault(i =>
+                        (i.Name ?? string.Empty)
+                            .Contains("Bandersnatch", StringComparison.OrdinalIgnoreCase));
                 }
 
                 if (item == null)
