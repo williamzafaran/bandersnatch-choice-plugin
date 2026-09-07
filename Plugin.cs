@@ -118,7 +118,7 @@ namespace Jellyfin.Plugin.BandersnatchChoice
         /// </summary>
         private string? FindWebDirectory()
         {
-            // 1. Try IApplicationPaths.WebPath (available in Jellyfin 10.9+)
+            // 1. Try IApplicationPaths.WebPath (Jellyfin 10.9+)
             var webPathProp = _applicationPaths.GetType().GetProperty("WebPath",
                 BindingFlags.Public | BindingFlags.Instance);
             if (webPathProp != null)
@@ -126,30 +126,60 @@ namespace Jellyfin.Plugin.BandersnatchChoice
                 var webPath = webPathProp.GetValue(_applicationPaths) as string;
                 if (!string.IsNullOrEmpty(webPath) && IsValidWebDir(webPath))
                 {
+                    _logger.LogInformation("[BandersnatchChoice] Found web dir via IApplicationPaths.WebPath: {Path}", webPath);
                     return webPath;
                 }
             }
 
-            // 2. Try locations relative to the application base directory
+            // 2. Build candidate list from every sensible location
             var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            var entryDir = Path.GetDirectoryName(System.Reflection.Assembly.GetEntryAssembly()?.Location) ?? baseDir;
+
             var candidates = new[]
             {
+                // Relative to entry assembly (most reliable on all platforms)
+                Path.Combine(entryDir, "jellyfin-web"),
+                Path.Combine(entryDir, "web"),
+                Path.Combine(entryDir, "..", "jellyfin-web"),
+
+                // Relative to AppDomain base
                 Path.Combine(baseDir, "jellyfin-web"),
                 Path.Combine(baseDir, "web"),
                 Path.Combine(baseDir, "..", "jellyfin-web"),
-                // Common Linux package install paths
+
+                // Windows: standard installer layout
+                @"C:\Program Files\Jellyfin\Server\jellyfin-web",
+                @"C:\Program Files\Jellyfin\jellyfin-web",
+                @"C:\ProgramData\Jellyfin\Server\jellyfin-web",
+
+                // Linux package paths
                 "/usr/share/jellyfin/web",
                 "/usr/lib/jellyfin-web",
                 "/opt/jellyfin/web",
+
+                // Docker default
+                "/jellyfin/jellyfin-web",
             };
 
             foreach (var candidate in candidates)
             {
-                if (IsValidWebDir(candidate))
+                try
                 {
-                    return candidate;
+                    var normalised = Path.GetFullPath(candidate);
+                    if (IsValidWebDir(normalised))
+                    {
+                        _logger.LogInformation("[BandersnatchChoice] Found web dir: {Path}", normalised);
+                        return normalised;
+                    }
                 }
+                catch { /* path may be invalid on this OS — ignore */ }
             }
+
+            _logger.LogWarning(
+                "[BandersnatchChoice] Could not find Jellyfin web directory. " +
+                "Tried baseDir={BaseDir}, entryDir={EntryDir}. " +
+                "Script injection skipped — add your web path via the plugin config page once the settings page is working.",
+                baseDir, entryDir);
 
             return null;
         }

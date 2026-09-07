@@ -90,16 +90,22 @@
 
     async function onVideoAppeared(videoEl) {
         video = videoEl;
-        console.log('[Bandersnatch] Video element detected.');
+        console.log('[Bandersnatch] Video element detected — attempting item ID resolution.');
 
-        // Give the player a moment to set the src attribute
-        await sleep(600);
+        // Retry for up to 3 seconds: the src attribute is often set after the element appears
+        let itemId = null;
+        for (let attempt = 0; attempt < 6; attempt++) {
+            await sleep(500);
+            itemId = await resolveCurrentItemId(video);
+            if (itemId) break;
+            console.log(`[Bandersnatch] Item ID not resolved yet (attempt ${attempt + 1}/6)…`);
+        }
 
-        const itemId = extractItemIdFromVideo(video);
         if (!itemId) {
-            console.log('[Bandersnatch] Could not extract item ID from video src — skipping.');
+            console.warn('[Bandersnatch] Could not resolve item ID after 3s — giving up.');
             return;
         }
+        console.log('[Bandersnatch] Item ID resolved:', itemId);
 
         // Fetch plugin config first (needed for manual override check)
         pluginConfig = await fetchPluginConfig();
@@ -162,29 +168,67 @@
     // ================================================================
 
     /**
-     * Extracts the Jellyfin item ID from the video element's src URL.
-     * Jellyfin stream URLs follow the pattern: /Videos/{itemId}/stream...
+     * Tries 4 sources in order to find the currently playing Jellyfin item ID.
+     * Returns null if all sources fail.
      */
-    function extractItemIdFromVideo(videoEl) {
-        const src = videoEl.src
-            || videoEl.querySelector?.('source')?.src
-            || '';
-        const match = src.match(/\/Videos\/([a-f0-9]{8,})\//i);
-        return match?.[1] ?? null;
+    async function resolveCurrentItemId(videoEl) {
+        // Source 1: video.src URL  (works for direct play)
+        const src = videoEl?.src || videoEl?.querySelector?.('source')?.src || '';
+        if (src && !src.startsWith('blob:')) {
+            const m = src.match(/\/Videos\/([a-f0-9]{8,})\//i);
+            if (m) { console.log('[Bandersnatch] Item ID from video.src'); return m[1]; }
+        }
+
+        // Source 2: page URL hash  (?id=... or &id=...)
+        const hashId = (window.location.hash + window.location.search)
+            .match(/[?&#]id=([a-f0-9]{32})/i)?.[1];
+        if (hashId) { console.log('[Bandersnatch] Item ID from URL hash'); return hashId; }
+
+        // Source 3: window.ApiClient (Jellyfin SPA global)
+        try {
+            if (window.ApiClient) {
+                const sessions = await window.ApiClient.getSessions();
+                const mine = sessions?.find(s => s.NowPlayingItem?.Id);
+                if (mine?.NowPlayingItem?.Id) {
+                    console.log('[Bandersnatch] Item ID from ApiClient.getSessions()');
+                    return mine.NowPlayingItem.Id;
+                }
+            }
+        } catch { /* ApiClient might not have getSessions */ }
+
+        // Source 4: /Sessions REST API
+        try {
+            const headers = {};
+            const token = getAuthToken();
+            if (token) headers['X-Emby-Authorization'] = `MediaBrowser Token="${token}"`;
+            const res = await fetch('/Sessions', { headers });
+            if (res.ok) {
+                const sessions = await res.json();
+                const mine = sessions.find(s => s.NowPlayingItem?.Id);
+                if (mine?.NowPlayingItem?.Id) {
+                    console.log('[Bandersnatch] Item ID from /Sessions API');
+                    return mine.NowPlayingItem.Id;
+                }
+            }
+        } catch { /* network error */ }
+
+        return null;
     }
 
     function isBandersnatch(item) {
-        // Manual override: always match if item ID matches configured override
+        // Manual override
         if (pluginConfig.manualItemId && item.Id === pluginConfig.manualItemId) {
+            console.log('[Bandersnatch] Matched via manual item ID override');
             return true;
         }
 
         if (!pluginConfig.autoDetect) return false;
 
         const titleMatch = (item.Name ?? '').toLowerCase().includes(BANDERSNATCH_TITLE_KEYWORD);
-        const durationMs = (item.RunTimeTicks ?? 0) / 10000; // 100-nanosecond ticks → ms
+        const durationMs = (item.RunTimeTicks ?? 0) / 10000; // ticks → ms
         const durationMatch = Math.abs(durationMs - BANDERSNATCH_DURATION_MS) < DURATION_TOLERANCE_MS;
 
+        console.log(`[Bandersnatch] Auto-detect: title="${item.Name}" titleMatch=${titleMatch} durationMs=${Math.round(durationMs)} durationMatch=${durationMatch}`);
         return titleMatch && durationMatch;
     }
 

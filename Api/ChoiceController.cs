@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -10,7 +11,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.BandersnatchChoice.Api
 {
     /// <summary>
-    /// API controller serving metadata, config, and static assets for the
+    /// API controller serving metadata, config, assets, and diagnostics for the
     /// Bandersnatch interactive choice overlay.
     /// </summary>
     [ApiController]
@@ -29,7 +30,6 @@ namespace Jellyfin.Plugin.BandersnatchChoice.Api
 
         // ---------------------------------------------------------------
         // GET /BandersnatchChoice/Metadata
-        // Returns the full segment/choice-point metadata JSON consumed by bandersnatch.js
         // ---------------------------------------------------------------
 
         /// <summary>Gets the Bandersnatch segment and choice-point metadata.</summary>
@@ -38,15 +38,16 @@ namespace Jellyfin.Plugin.BandersnatchChoice.Api
         [Produces("application/json")]
         public ActionResult GetMetadata()
         {
-            return ServeEmbeddedResource("Jellyfin.Plugin.BandersnatchChoice.Web.bandersnatch-metadata.json", "application/json");
+            return ServeEmbeddedResource(
+                "Jellyfin.Plugin.BandersnatchChoice.Web.bandersnatch-metadata.json",
+                "application/json");
         }
 
         // ---------------------------------------------------------------
         // GET /BandersnatchChoice/Config
-        // Returns the current plugin configuration as JSON for the injected JS
         // ---------------------------------------------------------------
 
-        /// <summary>Gets the current plugin configuration as JSON.</summary>
+        /// <summary>Gets the current plugin configuration as JSON for the injected JS.</summary>
         [HttpGet("Config")]
         [AllowAnonymous]
         [Produces("application/json")]
@@ -62,10 +63,10 @@ namespace Jellyfin.Plugin.BandersnatchChoice.Api
 
                 var result = new
                 {
-                    enabled = config.Enabled,
+                    enabled       = config.Enabled,
                     leadInSeconds = config.LeadInSeconds,
-                    autoDetect = config.AutoDetect,
-                    manualItemId = config.ManualItemId
+                    autoDetect    = config.AutoDetect,
+                    manualItemId  = config.ManualItemId
                 };
 
                 return Content(JsonSerializer.Serialize(result), "application/json");
@@ -79,7 +80,6 @@ namespace Jellyfin.Plugin.BandersnatchChoice.Api
 
         // ---------------------------------------------------------------
         // GET /BandersnatchChoice/Assets/{filename}
-        // Serves bandersnatch.js and bandersnatch.css from embedded resources
         // ---------------------------------------------------------------
 
         /// <summary>Gets a static web asset (JS or CSS) from embedded resources.</summary>
@@ -87,18 +87,91 @@ namespace Jellyfin.Plugin.BandersnatchChoice.Api
         [AllowAnonymous]
         public ActionResult GetAsset([FromRoute] string filename)
         {
-            // Only allow known files — no path traversal
+            // Whitelist — no path traversal possible
             if (filename != "bandersnatch.js" && filename != "bandersnatch.css")
             {
                 return NotFound();
             }
 
             var resourceName = $"Jellyfin.Plugin.BandersnatchChoice.Web.{filename}";
-            var contentType = filename.EndsWith(".js", StringComparison.OrdinalIgnoreCase)
+            var contentType  = filename.EndsWith(".js", StringComparison.OrdinalIgnoreCase)
                 ? "application/javascript"
                 : "text/css";
 
             return ServeEmbeddedResource(resourceName, contentType);
+        }
+
+        // ---------------------------------------------------------------
+        // GET /BandersnatchChoice/Status
+        // Diagnostic endpoint — visit in browser to verify plugin is working
+        // ---------------------------------------------------------------
+
+        /// <summary>
+        /// Returns a JSON diagnostic report: plugin version, available embedded resources,
+        /// and whether index.html was already injected.
+        /// </summary>
+        [HttpGet("Status")]
+        [AllowAnonymous]
+        [Produces("application/json")]
+        public ActionResult GetStatus()
+        {
+            try
+            {
+                var assembly      = Assembly.GetExecutingAssembly();
+                var resourceNames = assembly.GetManifestResourceNames();
+                var config        = BandersnatchChoicePlugin.Instance?.Configuration;
+
+                // Check if index.html has the injection (scan common paths)
+                string? injectedInto = null;
+                var webCandidates = new[]
+                {
+                    @"C:\Program Files\Jellyfin\Server\jellyfin-web\index.html",
+                    "/usr/share/jellyfin/web/index.html",
+                    "/usr/lib/jellyfin-web/index.html",
+                    Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "jellyfin-web", "index.html"),
+                    Path.Combine(
+                        Path.GetDirectoryName(Assembly.GetEntryAssembly()?.Location) ?? "",
+                        "jellyfin-web", "index.html"),
+                };
+                foreach (var p in webCandidates)
+                {
+                    try
+                    {
+                        if (System.IO.File.Exists(p) &&
+                            System.IO.File.ReadAllText(p).Contains("bandersnatch.js", StringComparison.OrdinalIgnoreCase))
+                        {
+                            injectedInto = p;
+                            break;
+                        }
+                    }
+                    catch { /* skip */ }
+                }
+
+                var report = new
+                {
+                    plugin          = "Bandersnatch Interactive",
+                    version         = assembly.GetName().Version?.ToString() ?? "unknown",
+                    pluginLoaded    = BandersnatchChoicePlugin.Instance != null,
+                    scriptInjected  = injectedInto != null,
+                    injectedInto,
+                    embeddedResources = resourceNames,
+                    config          = config == null ? null : new
+                    {
+                        config.Enabled,
+                        config.LeadInSeconds,
+                        config.AutoDetect,
+                        config.ManualItemId
+                    }
+                };
+
+                return Content(JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }),
+                    "application/json");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[BandersnatchChoice] Error in Status endpoint");
+                return StatusCode(500, ex.Message);
+            }
         }
 
         // ---------------------------------------------------------------
@@ -113,7 +186,10 @@ namespace Jellyfin.Plugin.BandersnatchChoice.Api
                 using var stream = assembly.GetManifestResourceStream(resourceName);
                 if (stream == null)
                 {
-                    _logger.LogWarning("[BandersnatchChoice] Embedded resource not found: {Resource}", resourceName);
+                    _logger.LogWarning(
+                        "[BandersnatchChoice] Embedded resource not found: {Resource}. Available: {Available}",
+                        resourceName,
+                        string.Join(", ", assembly.GetManifestResourceNames()));
                     return NotFound($"Resource '{resourceName}' not found.");
                 }
 
